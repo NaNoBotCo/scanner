@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#111417">
+<title>Scanner</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<!-- ============================ home ============================ -->
+<section id="home" class="screen show">
+  <header class="bar">
+    <h1>Scanner</h1>
+    <button id="helpBtn" class="icon" aria-label="Help">?</button>
+  </header>
+  <div class="scroll">
+    <ul id="docList" class="docs"></ul>
+    <p id="empty" class="empty">No documents yet.</p>
+    <p id="usage" class="note"></p>
+  </div>
+  <footer class="bar bottom">
+    <button id="newScan" class="big primary">New scan</button>
+  </footer>
+</section>
+
+<!-- ============================ camera ============================ -->
+<section id="capture" class="screen dark">
+  <header class="bar over">
+    <button id="capBack" class="icon" aria-label="Back">&larr;</button>
+    <span id="capCount" class="count">0 pages</span>
+    <button id="torch" class="icon" aria-label="Light" hidden>&#9788;</button>
+  </header>
+  <div class="stage">
+    <video id="video" playsinline autoplay muted></video>
+    <canvas id="overlay"></canvas>
+    <p id="camMsg" class="cammsg"></p>
+  </div>
+  <footer class="bar bottom over">
+    <button id="pickFiles" class="ghost">Photos</button>
+    <button id="shutter" class="shutter" aria-label="Take the picture"></button>
+    <button id="capDone" class="ghost">Done</button>
+  </footer>
+</section>
+
+<!-- ============================ document ============================ -->
+<section id="doc" class="screen">
+  <header class="bar">
+    <button id="docBack" class="icon" aria-label="Back">&larr;</button>
+    <button id="docName" class="title"></button>
+    <button id="docMenu" class="icon" aria-label="Settings">&#9881;</button>
+  </header>
+  <div class="scroll">
+    <ul id="pageList" class="pages"></ul>
+  </div>
+  <footer class="bar bottom three">
+    <button id="addPages" class="big">Add pages</button>
+    <button id="savePdf" class="big">PDF</button>
+    <button id="sharePdf" class="big primary">Share</button>
+  </footer>
+</section>
+
+<!-- ============================ one page ============================ -->
+<section id="page" class="screen dark">
+  <header class="bar over">
+    <button id="pageBack" class="icon" aria-label="Back">&larr;</button>
+    <span id="pageNum" class="count"></span>
+    <button id="pageDel" class="icon" aria-label="Delete this page">&#128465;</button>
+  </header>
+  <div class="stage"><img id="pageImg" alt="The scanned page"></div>
+  <div class="chips" id="filterChips">
+    <button data-f="colour">Colour</button>
+    <button data-f="gray">Grey</button>
+    <button data-f="bw">Text</button>
+    <button data-f="photo">Photo</button>
+  </div>
+  <footer class="bar bottom rows over">
+    <div class="row2">
+      <button id="rotL" class="big">Turn left</button>
+      <button id="rotR" class="big">Turn right</button>
+    </div>
+    <div class="row2">
+      <button id="recrop" class="big">Crop</button>
+      <button id="signBtn" class="big primary">Sign</button>
+    </div>
+  </footer>
+</section>
+
+<!-- ============================ crop ============================ -->
+<section id="crop" class="screen dark">
+  <header class="bar over">
+    <button id="cropCancel" class="icon" aria-label="Back">&larr;</button>
+    <span class="count">Drag the corners</span>
+    <canvas id="loupe" width="150" height="150"></canvas>
+  </header>
+  <div class="stage" id="cropStage">
+    <img id="cropImg" alt="The photo, with the page corners marked">
+    <canvas id="cropLines"></canvas>
+    <div class="handle" data-i="0"></div>
+    <div class="handle" data-i="1"></div>
+    <div class="handle" data-i="2"></div>
+    <div class="handle" data-i="3"></div>
+  </div>
+  <footer class="bar bottom three over">
+    <button id="cropAuto" class="big">Find page</button>
+    <button id="cropAll" class="big">Whole photo</button>
+    <button id="cropSave" class="big primary">Save</button>
+  </footer>
+</section>
+
+<!-- ============================ signature ============================ -->
+<section id="sign" class="screen">
+  <header class="bar thin">
+    <button id="signBack" class="icon" aria-label="Back">&larr;</button>
+    <button class="swatch" data-ink="#101214" aria-pressed="true" aria-label="Black ink"></button>
+    <button class="swatch blue" data-ink="#16307a" aria-pressed="false" aria-label="Blue ink"></button>
+    <span class="grow"></span>
+    <button id="signClear" class="pill">Clear</button>
+  </header>
+  <div class="pad" id="pad">
+    <canvas id="signPad"></canvas>
+    <span class="baseline"></span>
+    <p id="padHint" class="padhint">Sign here with a finger. Turn the phone sideways for more room.</p>
+  </div>
+  <footer class="bar bottom rows">
+    <div class="row2">
+      <button id="signSaved" class="big">Saved</button>
+      <button id="signPhoto" class="big">From a photo</button>
+    </div>
+    <div class="row2">
+      <button id="signUse" class="big primary">Put it on the page</button>
+    </div>
+  </footer>
+</section>
+
+<!-- ============================ placing ============================ -->
+<section id="place" class="screen dark">
+  <header class="bar over">
+    <button id="placeBack" class="icon" aria-label="Back">&larr;</button>
+    <span class="count">Drag it where you want it</span>
+  </header>
+  <div class="stage" id="placeStage">
+    <img id="placeImg" alt="The page">
+    <img id="placeSig" alt="Your signature" draggable="false">
+  </div>
+  <footer class="bar bottom three over">
+    <button id="sigSmall" class="big">Smaller</button>
+    <button id="sigBig" class="big">Bigger</button>
+    <button id="sigApply" class="big primary">Done</button>
+  </footer>
+</section>
+
+<!-- ============================ sheets ============================ -->
+<div id="sheet" class="sheet" hidden>
+  <div class="sheetbody" id="sheetBody"></div>
+</div>
+<div id="busy" class="busy" hidden><div class="spin"></div><span id="busyMsg">Working</span></div>
+<div id="toast" class="toast" hidden></div>
+<input id="fileInput" type="file" accept="image/*" multiple hidden>
+<input id="sigInput" type="file" accept="image/*" hidden>
+
+<script src="js/imaging.js"></script>
+<script src="js/pdf.js"></script>
+<script src="js/store.js"></script>
+<script src="js/lock.js"></script>
+<script src="js/ui.js"></script>
+</body>
+</html>
