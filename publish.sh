@@ -16,5 +16,5 @@ fi
 
 git add -A
 git commit -m "${1:-scanner update}" || echo "nothing to commit"
-git push origin main
+"$HOME/.claude/bin/pr-push" . "${1:-scanner update}"
 echo "pushed — https://nanobotco.github.io/scanner/"
