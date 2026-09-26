@@ -16,8 +16,11 @@ WHAT IT DOES
                    photograph of a signature
   Export           PDF, sized Auto / A4 / Letter / Legal; save or share
   PDF to sheet     read a table off a PDF that carries text and hand back a
-                   spreadsheet: CSV, or Excel with a sheet per page.  A
-                   photographed page holds no text, so it waits on OCR.
+                   spreadsheet: CSV, or Excel with a sheet per page.  A ruled
+                   table is read off its own borders, so merged cells and
+                   stacked headers come out right; a borderless one is read from
+                   the spacing.  A photographed page holds no text: it waits on
+                   OCR.
 
 
 WHERE IT RUNS
