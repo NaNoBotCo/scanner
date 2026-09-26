@@ -3,7 +3,7 @@
   'use strict';
 
   var $ = function (s) { return document.querySelector(s); };
-  var BUILD = '5';
+  var BUILD = '6';
   var QUALITY = { small: 1400, normal: 2200, large: 3000 };
   var FILTERS = { colour: 'Colour', gray: 'Grey', bw: 'Text', photo: 'Photo' };
   var SIZES = { auto: 'Auto', a4: 'A4', letter: 'Letter', legal: 'Legal' };

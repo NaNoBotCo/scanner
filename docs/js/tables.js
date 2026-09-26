@@ -1,7 +1,9 @@
 /* tables.js — read a digital PDF's text layer and lay it out as a grid, then
    write that grid as CSV or a spreadsheet (.xlsx). No pixels: this reads the
    text a PDF already carries, so a scanned photo (no text layer) comes back
-   empty — that page needs OCR, which is not here yet. */
+   empty — that page needs OCR, which is not here yet. A ruled table (borders
+   drawn as vectors) is read off its own lines, which resolves merged cells and
+   stacked headers; a borderless one falls back to reading the whitespace. */
 (function (root) {
   'use strict';
 
@@ -159,7 +161,9 @@
   }
 
   function fromPdf(buf, onProgress) {
+    var OPS;
     return ensureLib().then(function (lib) {
+      OPS = lib.OPS;
       return lib.getDocument({ data: buf, isEvalSupported: false }).promise;
     }).then(function (pdf) {
       var n = pdf.numPages, pages = [], chain = Promise.resolve();
@@ -167,15 +171,124 @@
         chain = chain.then(function () {
           if (onProgress) onProgress(i, n);
           return pdf.getPage(i).then(function (page) {
-            return page.getTextContent().then(function (tc) {
-              pages.push({ page: i, grid: buildGrid(mapItems(tc.items)) });
-            });
+            return Promise.all([page.getTextContent(), page.getOperatorList()])
+              .then(function (r) {
+                var items = mapItems(r[0].items);
+                // a ruled table gives the truest structure (merged cells, stacked
+                // headers); fall back to whitespace when there are no lines.
+                var lat = latticeGrid(rulingLines(r[1], OPS), items);
+                pages.push({ page: i, grid: lat || buildGrid(items) });
+              });
           });
         });
       };
       for (var i = 1; i <= n; i++) _loop(i);
       return chain.then(function () { return { numPages: n, pages: pages }; });
     });
+  }
+
+  // ---------------------------------------------------------------- lattice
+
+  /* Walk the page's draw ops, tracking the transform, and collect every
+     rectangle in page space. Thin ones are ruling lines. Returns the vertical
+     line x-positions (column edges) and the horizontal line segments (each with
+     its x-span, so a merged cell — a row edge a column does not cross — shows).  */
+  function rulingLines(opList, OPS) {
+    var consume = {};
+    consume[OPS.moveTo] = 2; consume[OPS.lineTo] = 2; consume[OPS.curveTo] = 6;
+    consume[OPS.curveTo2] = 4; consume[OPS.curveTo3] = 4; consume[OPS.closePath] = 0;
+    consume[OPS.rectangle] = 4;
+
+    function mul(a, b) {
+      return [a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1],
+      a[0] * b[2] + a[2] * b[3], a[1] * b[2] + a[3] * b[3],
+      a[0] * b[4] + a[2] * b[5] + a[4], a[1] * b[4] + a[3] * b[5] + a[5]];
+    }
+    function ap(m, x, y) { return [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]]; }
+
+    var ctm = [1, 0, 0, 1, 0, 0], stack = [], vlines = [], hsegs = [];
+    var fns = opList.fnArray, args = opList.argsArray;
+    for (var i = 0; i < fns.length; i++) {
+      var fn = fns[i];
+      if (fn === OPS.save) stack.push(ctm.slice());
+      else if (fn === OPS.restore) ctm = stack.pop() || [1, 0, 0, 1, 0, 0];
+      else if (fn === OPS.transform) ctm = mul(ctm, args[i]);
+      else if (fn === OPS.constructPath) {
+        var ops = args[i][0], co = args[i][1], ci = 0;
+        for (var k = 0; k < ops.length; k++) {
+          if (ops[k] === OPS.rectangle) {
+            var p0 = ap(ctm, co[ci], co[ci + 1]), p1 = ap(ctm, co[ci] + co[ci + 2], co[ci + 1] + co[ci + 3]);
+            var X = Math.min(p0[0], p1[0]), Y = Math.min(p0[1], p1[1]);
+            var W = Math.abs(p1[0] - p0[0]), H = Math.abs(p1[1] - p0[1]);
+            var thin = Math.min(W, H), lng = Math.max(W, H);
+            if (thin <= 2.5 && lng >= 8) {
+              if (H >= W) vlines.push(X + W / 2);
+              else hsegs.push({ x0: X, x1: X + W, y: Y + H / 2 });
+            }
+          }
+          ci += consume[ops[k]] || 0;
+        }
+      }
+    }
+    return { vlines: vlines, hsegs: hsegs };
+  }
+
+  function cluster(vals, tol) {
+    vals = vals.slice().sort(function (a, b) { return a - b; });
+    var out = [], g = null;
+    vals.forEach(function (v) {
+      if (g && v - g.last <= tol) { g.sum += v; g.n++; g.last = v; }
+      else { g = { sum: v, n: 1, last: v }; out.push(g); }
+    });
+    return out.map(function (g) { return g.sum / g.n; });
+  }
+
+  /* Build a grid from ruling lines: vertical lines are column edges, horizontal
+     lines row edges. Text lands in the cell its centre/baseline fall in. Where a
+     column has no line on a row edge, that cell is merged across the rows and its
+     value fills down. Returns null when there is no real grid. */
+  function latticeGrid(ruling, items) {
+    var colE = cluster(ruling.vlines, 3);
+    var rowE = cluster(ruling.hsegs.map(function (s) { return s.y; }), 3);
+    if (colE.length < 3 || rowE.length < 3) return null;   // need ≥2 cols and ≥2 rows
+    colE.sort(function (a, b) { return a - b; });
+    rowE.sort(function (a, b) { return b - a; });           // top (high y) first
+    var nC = colE.length - 1, nR = rowE.length - 1, tol = 3;
+
+    var grid = [];
+    for (var r = 0; r < nR; r++) { grid.push([]); for (var c = 0; c < nC; c++) grid[r].push(''); }
+
+    function colOf(x) { for (var c = 0; c < nC; c++) if (x >= colE[c] - tol && x < colE[c + 1] + tol) return c; return -1; }
+    function rowOf(y) { for (var r = 0; r < nR; r++) if (y <= rowE[r] + tol && y > rowE[r + 1] - tol) return r; return -1; }
+
+    items.forEach(function (it) {
+      var c = colOf((it.left + it.right) / 2), r = rowOf(it.y);
+      if (c < 0 || r < 0) return;
+      grid[r][c] = grid[r][c] ? grid[r][c] + ' ' + it.str : it.str;
+    });
+
+    // A merged cell is a run of rows a column's lines never divide. Give every
+    // row in that run the run's one value, wherever in it the text sits.
+    function divides(col, y) {
+      return ruling.hsegs.some(function (s) {
+        return Math.abs(s.y - y) <= tol && s.x0 <= colE[col] + tol && s.x1 >= colE[col + 1] - tol;
+      });
+    }
+    for (var c2 = 0; c2 < nC; c2++) {
+      var a = 0;
+      for (var r2 = 1; r2 <= nR; r2++) {
+        if (r2 === nR || divides(c2, rowE[r2])) {          // close the run [a..r2-1]
+          if (r2 - 1 > a) {
+            var v = '';
+            for (var s = a; s < r2; s++) if (grid[s][c2]) { v = grid[s][c2]; break; }
+            if (v) for (var s2 = a; s2 < r2; s2++) grid[s2][c2] = v;
+          }
+          a = r2;
+        }
+      }
+    }
+
+    return trim(grid);
   }
 
   // ---------------------------------------------------------------- CSV
@@ -355,6 +468,7 @@
   root.TABLES = {
     ensureLib: ensureLib, fromPdf: fromPdf,
     gridToCSV: gridToCSV, toXLSX: toXLSX,
-    _mapItems: mapItems, _buildGrid: buildGrid   // for tests
+    _mapItems: mapItems, _buildGrid: buildGrid,   // for tests
+    _rulingLines: rulingLines, _latticeGrid: latticeGrid
   };
 })(typeof self !== 'undefined' ? self : this);
