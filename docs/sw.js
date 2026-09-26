@@ -1,5 +1,5 @@
 /* sw.js — keep the app shell on the phone so it opens without a connection. */
-var CACHE = 'scanner-v4';
+var CACHE = 'scanner-v5';
 var SHELL = [
   './', 'index.html', 'app.css', 'manifest.webmanifest',
   'js/imaging.js', 'js/pdf.js', 'js/tables.js', 'js/store.js', 'js/lock.js', 'js/ui.js', 'js/worker.js',
@@ -21,6 +21,23 @@ self.addEventListener('activate', function (e) {
 
 self.addEventListener('fetch', function (e) {
   if (e.request.method !== 'GET') return;
+
+  /* Page loads go to the network first, so a new build shows the moment the
+     phone is online; the cache is the fallback when it is not. Other assets
+     stay cache-first for speed and offline. */
+  if (e.request.mode === 'navigate') {
+    e.respondWith(
+      fetch(e.request).then(function (res) {
+        var copy = res.clone();
+        caches.open(CACHE).then(function (c) { c.put(e.request, copy); }).catch(function () { });
+        return res;
+      }).catch(function () {
+        return caches.match(e.request).then(function (hit) { return hit || caches.match('index.html'); });
+      })
+    );
+    return;
+  }
+
   e.respondWith(
     caches.match(e.request).then(function (hit) {
       return hit || fetch(e.request).then(function (res) {
