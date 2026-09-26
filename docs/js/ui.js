@@ -10,7 +10,8 @@
   var S = {
     doc: null, pages: [], idx: 0,
     stream: null, track: null, live: null, liveTimer: null,
-    cropQuad: null, cropBitmap: null, drag: -1, lastDeleted: null
+    cropQuad: null, cropBitmap: null, drag: -1, lastDeleted: null,
+    tbl: null
   };
 
   // ---------------------------------------------------------------- worker
@@ -68,7 +69,7 @@
   // ---------------------------------------------------------------- chrome
 
   function show(id) {
-    ['home', 'capture', 'doc', 'page', 'crop', 'sign', 'place'].forEach(function (k) {
+    ['home', 'capture', 'doc', 'page', 'crop', 'sign', 'place', 'tables'].forEach(function (k) {
       $('#' + k).classList.toggle('show', k === id);
     });
     if (id !== 'capture') stopCamera();
@@ -221,6 +222,7 @@
         'Sign opens a full-screen pad to sign with a finger, or takes the ink off a photo of a signature. Drag it where it goes.',
         'A saved signature sits behind a PIN, and behind the fingerprint where the phone allows it.',
         'PDF saves the file. Share sends it to mail, chat or Drive.',
+        'PDF → sheet reads a table out of a PDF that carries real text and hands back a spreadsheet — CSV, or Excel with a sheet per page. A photographed page holds no text to read, so that path waits on OCR.',
         'Pages sit in this browser’s storage until you delete them.'
       ].forEach(function (t) { body.appendChild(el('p', null, t)); });
       var stack = el('div', { class: 'stack' });
@@ -230,6 +232,127 @@
       body.appendChild(stack);
     });
   };
+
+  // ---------------------------------------------------------------- PDF → sheet
+
+  $('#pdfTables').onclick = function () { $('#pdfInput').click(); };
+
+  $('#pdfInput').onchange = function (e) {
+    var file = (e.target.files || [])[0];
+    e.target.value = '';
+    if (!file) return;
+    var name = safeName(file.name.replace(/\.pdf$/i, ''));
+    busy(true, 'Reading the PDF');
+    file.arrayBuffer().then(function (buf) {
+      return TABLES.fromPdf(new Uint8Array(buf), function (i, n) {
+        $('#busyMsg').textContent = 'Reading page ' + i + ' of ' + n;
+      });
+    }).then(function (res) {
+      busy(false);
+      S.tbl = { name: name, pages: res.pages, idx: 0 };
+      show('tables');
+      renderTable();
+    }).catch(function (err) {
+      busy(false);
+      toast(/password|encrypt/i.test(String(err && err.message)) ?
+        'That PDF is locked. Open it without a password first.' :
+        'That PDF would not open.');
+    });
+  };
+
+  /* one page's grid as an HTML table, or a note when the page carries no text */
+  function renderTable() {
+    var t = S.tbl;
+    if (!t) return;
+    var page = t.pages[t.idx] || { grid: [] };
+    var grid = page.grid;
+    $('#tblTitle').textContent = t.name;
+    $('#tblPage').textContent = (t.idx + 1) + '/' + t.pages.length;
+    $('#tblPrev').disabled = t.idx === 0;
+    $('#tblNext').disabled = t.idx === t.pages.length - 1;
+
+    var wrap = $('#tblWrap');
+    wrap.innerHTML = '';
+    if (!grid.length) {
+      wrap.classList.remove('tblwrap');
+      var m = el('div', { class: 'tblempty' });
+      m.appendChild(el('p', null, 'No text on this page.'));
+      m.appendChild(el('p', null, 'A photographed or scanned page is a picture, so there is nothing to read off it yet. Reading a table off an image needs OCR, which is not in Scanner yet.'));
+      wrap.appendChild(m);
+    } else {
+      wrap.classList.add('tblwrap');
+      var table = el('table', { class: 'grid' });
+      grid.forEach(function (row) {
+        var tr = el('tr');
+        row.forEach(function (cell) { tr.appendChild(el('td', null, cell || '')); });
+        table.appendChild(tr);
+      });
+      wrap.appendChild(table);
+    }
+
+    var withText = t.pages.filter(function (p) { return p.grid.length; }).length;
+    var note = grid.length
+      ? grid.length + (grid.length === 1 ? ' row' : ' rows') + ' × ' +
+        grid[0].length + (grid[0].length === 1 ? ' column' : ' columns') +
+        ' on this page. CSV saves this page; Excel saves all ' + t.pages.length + '.'
+      : (withText ? 'Nothing here. Turn to a page that has a table.'
+                  : 'None of the ' + t.pages.length + ' pages carry a text layer.');
+    $('#tblNote').textContent = note;
+  }
+
+  function tblGo(d) {
+    if (!S.tbl) return;
+    var n = S.tbl.idx + d;
+    if (n < 0 || n >= S.tbl.pages.length) return;
+    S.tbl.idx = n;
+    renderTable();
+  }
+  $('#tblPrev').onclick = function () { tblGo(-1); };
+  $('#tblNext').onclick = function () { tblGo(1); };
+  $('#tblBack').onclick = function () { S.tbl = null; show('home'); renderHome(); };
+
+  function tblHasAny() {
+    return S.tbl && S.tbl.pages.some(function (p) { return p.grid.length; });
+  }
+
+  $('#tblCsv').onclick = function () {
+    if (!S.tbl) return;
+    var grid = (S.tbl.pages[S.tbl.idx] || {}).grid || [];
+    if (!grid.length) { toast('This page has no table to save.'); return; }
+    var blob = new Blob(['﻿' + TABLES.gridToCSV(grid)], { type: 'text/csv' });
+    var name = safeName(S.tbl.name) + (S.tbl.pages.length > 1 ? ' p' + (S.tbl.idx + 1) : '') + '.csv';
+    saveOrShare(blob, name, false);
+  };
+
+  function buildXlsx() {
+    var sheets = S.tbl.pages
+      .filter(function (p) { return p.grid.length; })
+      .map(function (p) { return { name: 'Page ' + p.page, grid: p.grid }; });
+    return TABLES.toXLSX(sheets);
+  }
+
+  $('#tblXlsx').onclick = function () {
+    if (!tblHasAny()) { toast('No tables were found to save.'); return; }
+    saveOrShare(buildXlsx(), safeName(S.tbl.name) + '.xlsx', false);
+  };
+
+  $('#tblShare').onclick = function () {
+    if (!tblHasAny()) { toast('No tables were found to share.'); return; }
+    saveOrShare(buildXlsx(), safeName(S.tbl.name) + '.xlsx', true);
+  };
+
+  function saveOrShare(blob, name, share) {
+    if (share && navigator.canShare) {
+      var file = new File([blob], name, { type: blob.type });
+      if (navigator.canShare({ files: [file] })) {
+        navigator.share({ files: [file], title: name })
+          .catch(function (e) { if (e && e.name !== 'AbortError') download(blob, name); });
+        return;
+      }
+    }
+    download(blob, name);
+    toast(share ? 'Sharing is off here. The file was saved instead.' : 'Saved ' + name);
+  }
 
   // ---------------------------------------------------------------- camera
 
@@ -1266,6 +1389,7 @@
     else if ($('#sign').classList.contains('show')) { openPage(S.idx); history.pushState(null, ''); }
     else if ($('#page').classList.contains('show')) { show('doc'); renderDoc(); history.pushState(null, ''); }
     else if ($('#capture').classList.contains('show')) { stopCamera(); finishCapture(); history.pushState(null, ''); }
+    else if ($('#tables').classList.contains('show')) { S.tbl = null; show('home'); renderHome(); history.pushState(null, ''); }
     else if ($('#doc').classList.contains('show')) { show('home'); renderHome(); history.pushState(null, ''); }
   });
   history.pushState(null, '');

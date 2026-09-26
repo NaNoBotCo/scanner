@@ -1,8 +1,9 @@
 /* sw.js — keep the app shell on the phone so it opens without a connection. */
-var CACHE = 'scanner-v3';
+var CACHE = 'scanner-v4';
 var SHELL = [
   './', 'index.html', 'app.css', 'manifest.webmanifest',
-  'js/imaging.js', 'js/pdf.js', 'js/store.js', 'js/lock.js', 'js/ui.js', 'js/worker.js',
+  'js/imaging.js', 'js/pdf.js', 'js/tables.js', 'js/store.js', 'js/lock.js', 'js/ui.js', 'js/worker.js',
+  'js/vendor/pdfjs/pdf.min.js', 'js/vendor/pdfjs/pdf.worker.min.js',
   'icon-192.png', 'icon-512.png', 'icon-maskable-512.png'
 ];
 
