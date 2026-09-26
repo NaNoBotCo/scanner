@@ -208,6 +208,16 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 .keys button.wide{font-size:17px}
 .pinmsg{color:#b3261e;text-align:center;min-height:22px;margin:0 0 10px;font-size:16px}
 
+/* ---- tables (PDF → spreadsheet) ---- */
+.pageind{flex:0 0 auto;min-width:44px;text-align:center;font-size:15px;color:var(--dim)}
+.tblwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:var(--r);background:var(--card)}
+.grid{border-collapse:collapse;width:max-content;min-width:100%;font-size:15px}
+.grid td{border:1px solid var(--line);padding:7px 10px;vertical-align:top;white-space:pre-wrap;max-width:340px}
+.grid tr:first-child td{background:#eceae6;font-weight:650;position:sticky;top:0}
+.grid tr:nth-child(even) td{background:#faf9f7}
+.grid tr:nth-child(even):first-child td{background:#eceae6}
+.tblempty{padding:34px 18px;text-align:center;color:var(--dim);font-size:16px}
+
 /* ---- sideways, where a signature has room to run ---- */
 @media (max-height:520px){
   .bar.bottom.rows{flex-direction:row}

@@ -15,6 +15,9 @@ WHAT IT DOES
   Sign             a full-screen pad for a finger, or the ink lifted off a
                    photograph of a signature
   Export           PDF, sized Auto / A4 / Letter / Legal; save or share
+  PDF to sheet     read a table off a PDF that carries text and hand back a
+                   spreadsheet: CSV, or Excel with a sheet per page.  A
+                   photographed page holds no text, so it waits on OCR.
 
 
 WHERE IT RUNS
@@ -64,18 +67,23 @@ WORKING ON IT
   The camera needs https, or localhost.  Over the LAN by IP the browser
   withholds it; use the published address on the phone.
 
-  docs/  is the site.  No build step, no dependencies.
+  docs/  is the site.  No build step.
     index.html   the screens
     app.css      one stylesheet
     js/imaging.js  corner detection, perspective warp, filters, ink lift
     js/pdf.js      PDF assembly, JPEG pages embedded as DCTDecode
+    js/tables.js   PDF text -> grid, then CSV or .xlsx
     js/store.js    IndexedDB
     js/lock.js     the PIN, the data key, WebAuthn PRF
     js/worker.js   the heavy work, off the main thread
     js/ui.js       screens and wiring
+    js/vendor/pdfjs/  Mozilla's pdf.js, loaded only for PDF to sheet
     sw.js          the offline cache
 
 
 LICENCE
 
   MIT.  See LICENSE.
+
+  js/vendor/pdfjs/ is Mozilla's pdf.js, Apache 2.0, bundled unchanged so the
+  feature runs offline with nothing fetched at use.

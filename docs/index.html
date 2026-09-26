@@ -27,6 +27,7 @@
     <p id="usage" class="note"></p>
   </div>
   <footer class="bar bottom">
+    <button id="pdfTables" class="big">PDF &rarr; sheet</button>
     <button id="newScan" class="big primary">New scan</button>
   </footer>
 </section>
@@ -157,6 +158,26 @@
   </footer>
 </section>
 
+<!-- ============================ tables (PDF → spreadsheet) ============================ -->
+<section id="tables" class="screen">
+  <header class="bar">
+    <button id="tblBack" class="icon" aria-label="Back">&larr;</button>
+    <span id="tblTitle" class="title">Tables</span>
+    <button id="tblPrev" class="icon" aria-label="Previous page">&lsaquo;</button>
+    <span id="tblPage" class="pageind">1/1</span>
+    <button id="tblNext" class="icon" aria-label="Next page">&rsaquo;</button>
+  </header>
+  <div class="scroll">
+    <div id="tblWrap" class="tblwrap"></div>
+    <p id="tblNote" class="note"></p>
+  </div>
+  <footer class="bar bottom three">
+    <button id="tblCsv" class="big">CSV</button>
+    <button id="tblXlsx" class="big primary">Excel</button>
+    <button id="tblShare" class="big">Share</button>
+  </footer>
+</section>
+
 <!-- ============================ sheets ============================ -->
 <div id="sheet" class="sheet" hidden>
   <div class="sheetbody" id="sheetBody"></div>
@@ -165,9 +186,11 @@
 <div id="toast" class="toast" hidden></div>
 <input id="fileInput" type="file" accept="image/*" multiple hidden>
 <input id="sigInput" type="file" accept="image/*" hidden>
+<input id="pdfInput" type="file" accept="application/pdf,.pdf" hidden>
 
 <script src="js/imaging.js"></script>
 <script src="js/pdf.js"></script>
+<script src="js/tables.js"></script>
 <script src="js/store.js"></script>
 <script src="js/lock.js"></script>
 <script src="js/ui.js"></script>
