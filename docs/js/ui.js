@@ -3,7 +3,7 @@
   'use strict';
 
   var $ = function (s) { return document.querySelector(s); };
-  var BUILD = '6';
+  var BUILD = '7';
   var QUALITY = { small: 1400, normal: 2200, large: 3000 };
   var FILTERS = { colour: 'Colour', gray: 'Grey', bw: 'Text', photo: 'Photo' };
   var SIZES = { auto: 'Auto', a4: 'A4', letter: 'Letter', legal: 'Legal' };
@@ -292,12 +292,22 @@
     }
 
     var withText = t.pages.filter(function (p) { return p.grid.length; }).length;
-    var note = grid.length
-      ? grid.length + (grid.length === 1 ? ' row' : ' rows') + ' × ' +
+    var sheets = sheetsOf();
+    var note;
+    if (!grid.length) {
+      note = withText ? 'Nothing here. Turn to a page that has a table.'
+                      : 'None of the ' + t.pages.length + ' pages carry a text layer.';
+    } else if (sheets[0] && sheets[0].combined) {
+      var total = sheets[0].grid.length - 1;      // minus the header
+      var extra = sheets.length - 1;
+      note = 'Previewing page ' + (t.idx + 1) + ' of ' + t.pages.length +
+        '. Save makes one table — ' + total + ' rows × ' + sheets[0].grid[0].length + ' columns' +
+        (extra ? ', plus ' + extra + ' odd page' + (extra > 1 ? 's' : '') + ' kept apart' : '') + '.';
+    } else {
+      note = grid.length + (grid.length === 1 ? ' row' : ' rows') + ' × ' +
         grid[0].length + (grid[0].length === 1 ? ' column' : ' columns') +
-        ' on this page. CSV saves this page; Excel saves all ' + t.pages.length + '.'
-      : (withText ? 'Nothing here. Turn to a page that has a table.'
-                  : 'None of the ' + t.pages.length + ' pages carry a text layer.');
+        ' on this page. Excel saves ' + (sheets.length === 1 ? 'it' : 'all ' + t.pages.length + ' pages') + '.';
+    }
     $('#tblNote').textContent = note;
   }
 
@@ -316,21 +326,21 @@
     return S.tbl && S.tbl.pages.some(function (p) { return p.grid.length; });
   }
 
+  function sheetsOf() { return S.tbl ? TABLES.combine(S.tbl.pages, S.tbl.name) : []; }
+
   $('#tblCsv').onclick = function () {
-    if (!S.tbl) return;
-    var grid = (S.tbl.pages[S.tbl.idx] || {}).grid || [];
-    if (!grid.length) { toast('This page has no table to save.'); return; }
-    var blob = new Blob(['﻿' + TABLES.gridToCSV(grid)], { type: 'text/csv' });
-    var name = safeName(S.tbl.name) + (S.tbl.pages.length > 1 ? ' p' + (S.tbl.idx + 1) : '') + '.csv';
+    var sheets = sheetsOf();
+    if (!sheets.length) { toast('No table to save.'); return; }
+    // one file when the pages are one table; otherwise the page in view
+    var s = sheets.length === 1 ? sheets[0]
+      : (sheets[Math.min(S.tbl.idx, sheets.length - 1)]);
+    var blob = new Blob(['﻿' + TABLES.gridToCSV(s.grid)], { type: 'text/csv' });
+    var many = sheets.length > 1;
+    var name = safeName(S.tbl.name) + (many ? ' p' + (S.tbl.idx + 1) : '') + '.csv';
     saveOrShare(blob, name, false);
   };
 
-  function buildXlsx() {
-    var sheets = S.tbl.pages
-      .filter(function (p) { return p.grid.length; })
-      .map(function (p) { return { name: 'Page ' + p.page, grid: p.grid }; });
-    return TABLES.toXLSX(sheets);
-  }
+  function buildXlsx() { return TABLES.toXLSX(sheetsOf()); }
 
   $('#tblXlsx').onclick = function () {
     if (!tblHasAny()) { toast('No tables were found to save.'); return; }

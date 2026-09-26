@@ -291,6 +291,61 @@
     return trim(grid);
   }
 
+  // ---------------------------------------------------------------- combine
+
+  function sameRow(a, b) {
+    if (!a || !b) return false;
+    var ja = a.map(function (v) { return (v || '').trim().toLowerCase(); }).join('\u0001');
+    var jb = b.map(function (v) { return (v || '').trim().toLowerCase(); }).join('\u0001');
+    return ja === jb && ja.replace(/[\u0001]/g, '') !== '';
+  }
+
+  function colCount(grid) { return grid.reduce(function (m, r) { return Math.max(m, r.length); }, 0); }
+
+  /* A price list or statement that runs over many pages is one table, not many.
+     Find the width most pages share (a page may be one short where a trailing
+     column is empty), stack those pages into a single sheet, and drop the header
+     the PDF repeats on each page. Pages that do not fit that width keep their own
+     sheet, so a stray page is never lost or allowed to wreck the join. Returns
+     [{ name, grid, combined }].  */
+  function combine(pages, name) {
+    var live = pages.filter(function (p) { return p.grid && p.grid.length; });
+    if (!live.length) return [];
+    var counts = live.map(function (p) { return colCount(p.grid); });
+
+    // the dominant table width: the largest that most pages sit within one of
+    var uniq = counts.slice().sort(function (a, b) { return b - a; })
+      .filter(function (v, i, a) { return i === 0 || v !== a[i - 1]; });
+    var need = Math.max(2, Math.ceil(live.length / 2)), nc = 0;
+    for (var u = 0; u < uniq.length; u++) {
+      var cand = uniq[u], m = 0;
+      for (var i = 0; i < counts.length; i++) if (counts[i] >= cand - 1 && counts[i] <= cand) m++;
+      if (m >= need) { nc = cand; break; }
+    }
+    if (!nc) return live.map(function (p) { return { name: 'Page ' + p.page, grid: p.grid, combined: false }; });
+
+    var main = [], header = null, sheets = [], used = {};
+    live.forEach(function (p, pi) {
+      if (counts[pi] >= nc - 1 && counts[pi] <= nc) {
+        if (!header) header = p.grid[0];
+        p.grid.forEach(function (row) {
+          if (main.length && sameRow(row, header)) return;   // repeated header
+          var padded = row.slice();
+          while (padded.length < nc) padded.push('');
+          main.push(padded.slice(0, nc));
+        });
+      } else {
+        sheets.push({ page: p.page, grid: p.grid });          // stray page, kept apart
+      }
+    });
+
+    var out = [{ name: safeSheetName(name || 'Table', used), grid: main, combined: true }];
+    sheets.forEach(function (s) {
+      out.push({ name: safeSheetName('Page ' + s.page, used), grid: s.grid, combined: false });
+    });
+    return out;
+  }
+
   // ---------------------------------------------------------------- CSV
 
   function csvCell(v) {
@@ -318,20 +373,46 @@
 
   var NUMBER = /^-?\d+(\.\d+)?$/;
 
+  /* style ids in styles.xml below: 1 = body cell (thin border), 2 = header
+     (bold, white on blue, centred). Row 1 is treated as the header. */
   function sheetXml(grid) {
+    var nCols = grid.reduce(function (m, r) { return Math.max(m, r.length); }, 0);
+    var nRows = grid.length;
+
     var rows = grid.map(function (row, r) {
-      var cells = row.map(function (v, c) {
+      var s = r === 0 && nRows > 1 ? '2' : '1';
+      var cells = [];
+      for (var c = 0; c < nCols; c++) {
+        var v = row[c] == null ? '' : String(row[c]);
+        if (v === '') continue;
         var ref = colName(c) + (r + 1);
-        v = v == null ? '' : String(v);
-        if (v === '') return '';
-        if (NUMBER.test(v)) return '<c r="' + ref + '"><v>' + v + '</v></c>';
-        return '<c r="' + ref + '" t="inlineStr"><is><t xml:space="preserve">' + xmlText(v) + '</t></is></c>';
-      }).join('');
-      return '<row r="' + (r + 1) + '">' + cells + '</row>';
+        if (s === '1' && NUMBER.test(v)) cells.push('<c r="' + ref + '" s="1"><v>' + v + '</v></c>');
+        else cells.push('<c r="' + ref + '" s="' + s + '" t="inlineStr"><is><t xml:space="preserve">' + xmlText(v) + '</t></is></c>');
+      }
+      return '<row r="' + (r + 1) + '">' + cells.join('') + '</row>';
     }).join('');
+
+    // column widths from the longest cell in each column
+    var widths = [];
+    for (var c = 0; c < nCols; c++) {
+      var max = 0;
+      for (var r = 0; r < nRows; r++) { var l = (grid[r][c] == null ? '' : String(grid[r][c])).length; if (l > max) max = l; }
+      widths.push(Math.min(60, Math.max(8, max + 2)));
+    }
+    var cols = nCols ? '<cols>' + widths.map(function (w, i) {
+      return '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + w + '" customWidth="1"/>';
+    }).join('') + '</cols>' : '';
+
+    // freeze the header row and let each column filter
+    var views = nRows > 1
+      ? '<sheetViews><sheetView tabSelected="1" workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>'
+      : '';
+    var filter = nRows > 1 && nCols
+      ? '<autoFilter ref="A1:' + colName(nCols - 1) + nRows + '"/>' : '';
+
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
       '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
-      '<sheetData>' + rows + '</sheetData></worksheet>';
+      views + cols + '<sheetData>' + rows + '</sheetData>' + filter + '</worksheet>';
   }
 
   function safeSheetName(name, used) {
@@ -384,13 +465,26 @@
     var workbookRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
       '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + wbRels + '</Relationships>';
 
+    var thin = '<left style="thin"><color rgb="FFBFBFBF"/></left><right style="thin"><color rgb="FFBFBFBF"/></right>' +
+      '<top style="thin"><color rgb="FFBFBFBF"/></top><bottom style="thin"><color rgb="FFBFBFBF"/></bottom>';
     var styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
       '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
-      '<fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>' +
-      '<fills count="1"><fill><patternFill patternType="none"/></fill></fills>' +
-      '<borders count="1"><border/></borders>' +
+      '<fonts count="2">' +
+      '<font><sz val="11"/><name val="Calibri"/></font>' +
+      '<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>' +
+      '</fonts>' +
+      '<fills count="3">' +
+      '<fill><patternFill patternType="none"/></fill>' +
+      '<fill><patternFill patternType="gray125"/></fill>' +
+      '<fill><patternFill patternType="solid"><fgColor rgb="FF1D5FB4"/></patternFill></fill>' +
+      '</fills>' +
+      '<borders count="2"><border/><border>' + thin + '</border></borders>' +
       '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
-      '<cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs>' +
+      '<cellXfs count="3">' +
+      '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+      '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/>' +
+      '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+      '</cellXfs>' +
       '</styleSheet>';
 
     var files = [
@@ -466,7 +560,7 @@
   }
 
   root.TABLES = {
-    ensureLib: ensureLib, fromPdf: fromPdf,
+    ensureLib: ensureLib, fromPdf: fromPdf, combine: combine,
     gridToCSV: gridToCSV, toXLSX: toXLSX,
     _mapItems: mapItems, _buildGrid: buildGrid,   // for tests
     _rulingLines: rulingLines, _latticeGrid: latticeGrid
