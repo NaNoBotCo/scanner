@@ -1,5 +1,5 @@
 /* sw.js — keep the app shell on the phone so it opens without a connection. */
-var CACHE = 'scanner-v6';
+var CACHE = 'scanner-v7';
 var SHELL = [
   './', 'index.html', 'app.css', 'manifest.webmanifest',
   'js/imaging.js', 'js/pdf.js', 'js/tables.js', 'js/store.js', 'js/lock.js', 'js/ui.js', 'js/worker.js',

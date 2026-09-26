@@ -19,8 +19,10 @@ WHAT IT DOES
                    spreadsheet: CSV, or Excel with a sheet per page.  A ruled
                    table is read off its own borders, so merged cells and
                    stacked headers come out right; a borderless one is read from
-                   the spacing.  A photographed page holds no text: it waits on
-                   OCR.
+                   the spacing.  Pages of one table join into a single sheet,
+                   with the styled header frozen and filtered; a stray page is
+                   kept on its own.  A photographed page holds no text: it waits
+                   on OCR.
 
 
 WHERE IT RUNS
