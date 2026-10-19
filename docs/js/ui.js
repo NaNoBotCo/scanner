@@ -3,7 +3,7 @@
   'use strict';
 
   var $ = function (s) { return document.querySelector(s); };
-  var BUILD = '8';
+  var BUILD = '9';
   var QUALITY = { small: 1400, normal: 2200, large: 3000 };
   var FILTERS = { colour: 'Colour', gray: 'Grey', bw: 'Text', photo: 'Photo' };
   var SIZES = { auto: 'Auto', a4: 'A4', letter: 'Letter', legal: 'Legal' };
@@ -227,7 +227,7 @@
     var name = 'Cards ' + now.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ' ' +
       now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     STORE.newDoc(name).then(function (d) {
-      d.kind = 'cards';
+      d.kind = 'cards'; d.autoName = name;
       return STORE.putDoc(d);
     }).then(function (d) {
       S.doc = d; S.pages = []; S.cardN = 1; S.cardSide = 'front';
@@ -244,8 +244,9 @@
         'Sign opens a full-screen pad to sign with a finger, or takes the ink off a photo of a signature. Drag it where it goes.',
         'A saved signature sits behind a PIN, and behind the fingerprint where the phone allows it.',
         'PDF saves the file. Share sends it to mail, chat or Drive.',
-        'Send to Claude opens the share list with the scan ready; pick Claude. A document goes as one PDF.',
-        'Cards is for business cards: the front, then the back if it has one, then Next card. Done sends every card to Claude as a picture, with a note asking for the details and a contact file. The note is also copied, to paste if it does not arrive.',
+        'Send to Claude puts the document, as one PDF, in the folder you pick on the Mac, where Claude Code reads it. It lands within a minute.',
+        'Cards is for business cards: the front, then the back if it has one, then Next card. Done sends them to the Mac, where each card is read into Contacts.',
+        'On a phone not linked to the Mac, Send to Claude opens the share list instead.',
         'PDF → sheet reads a table out of a PDF that carries real text and hands back a spreadsheet — CSV, or Excel with a sheet per page. A photographed page holds no text to read, so that path waits on OCR.',
         'Pages sit in this browser’s storage until you delete them.'
       ].forEach(function (t) { body.appendChild(el('p', null, t)); });
@@ -1476,8 +1477,130 @@
     return Promise.resolve();
   }
 
+  // ------------------------------------------------ the drop to her Mac
+
+  /* Her phone is linked once, by opening the app with #link=<key>. Linked, Send
+     to Claude puts the scan in the Mac folder she picks (scanner-drop Worker,
+     pulled every minute by tools/pull.py); cards go to CARD DROP and on into
+     Contacts. Not linked, it falls back to the phone's share list. */
+  var DROP = 'https://scanner-drop.nanobotco.workers.dev';
+  function stash(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
+  if (location.hash.indexOf('#link=') === 0) {
+    stash('scanner-drop-link', location.hash.slice(6));
+    history.replaceState(null, '', location.pathname + location.search);
+    setTimeout(function () { toast('This phone is linked to the Mac.'); }, 400);
+  }
+  function dropKey() { return stash('scanner-drop-link'); }
+
+  function upload(file, meta) {
+    var h = { 'X-Key': dropKey(), 'Content-Type': file.type, 'X-Name': encodeURIComponent(file.name) };
+    ['dest', 'group', 'side', 'event'].forEach(function (k) {
+      if (meta[k]) h['X-' + k[0].toUpperCase() + k.slice(1)] = encodeURIComponent(meta[k]);
+    });
+    return fetch(DROP + '/f/' + STORE.id(), { method: 'PUT', headers: h, body: file }).then(function (r) {
+      if (r.status === 401) throw new Error('unlinked');
+      if (!r.ok) throw new Error('drop ' + r.status);
+    });
+  }
+
+  function dests() {
+    var cached = [];
+    try { cached = JSON.parse(stash('scanner-dests') || '[]'); } catch (e) { cached = []; }
+    return fetch(DROP + '/dests', { headers: { 'X-Key': dropKey() } })
+      .then(function (r) { return r.ok ? r.json() : cached; })
+      .then(function (list) { if (list.length) stash('scanner-dests', JSON.stringify(list)); return list.length ? list : cached; })
+      .catch(function () { return cached; });
+  }
+
+  function sendFailed(e) {
+    busy(false);
+    toast(e && e.message === 'unlinked' ? 'This phone is not linked to the Mac any more.'
+      : 'Not sent: no connection. Try again.');
+  }
+
+  function sendCards() {
+    var groups = {}, order = [];
+    S.pages.forEach(function (p) {
+      var k = p.card || p.id;
+      if (!groups[k]) { groups[k] = []; order.push(k); }
+      groups[k].push(p);
+    });
+    var event = S.doc.autoName && S.doc.name !== S.doc.autoName ? S.doc.name : '';
+    var base = safeName(event || 'card');
+    busy(true, 'Sending ' + order.length + (order.length === 1 ? ' card' : ' cards'));
+    var chain = Promise.resolve();
+    order.forEach(function (k, n) {
+      groups[k].forEach(function (p) {
+        var side = p.side || 'front';
+        var f = new File([p.blob], base + ' ' + (n + 1) + ' ' + side + '.jpg', { type: 'image/jpeg' });
+        chain = chain.then(function () {
+          return upload(f, { dest: 'cards', group: S.doc.id + '-c' + k, side: side, event: event });
+        });
+      });
+    });
+    return chain.then(function () {
+      busy(false);
+      toast(order.length + (order.length === 1 ? ' card' : ' cards') + ' sent. In Contacts on the Mac in a minute or two.');
+    }).catch(sendFailed);
+  }
+
+  function sendDoc(d) {
+    var recent = [];
+    try { recent = JSON.parse(stash('scanner-dest-recent') || '[]'); } catch (e) { recent = []; }
+    recent = [d.k].concat(recent.filter(function (k) { return k !== d.k; })).slice(0, 4);
+    stash('scanner-dest-recent', JSON.stringify(recent));
+    busy(true, 'Sending to ' + d.l);
+    return buildPdf().then(function (blob) {
+      var f = new File([blob], safeName(S.doc.name) + '.pdf', { type: 'application/pdf' });
+      return upload(f, { dest: d.k, group: S.doc.id + '-' + Date.now().toString(36) });
+    }).then(function () {
+      busy(false);
+      toast('Sent to ' + d.l + '. On the Mac in a minute.');
+    }).catch(sendFailed);
+  }
+
+  function pickFolder() {
+    busy(true, 'Folders');
+    return dests().then(function (list) {
+      busy(false);
+      if (!list.length) list = [{ k: 'catalog', l: 'Catalog' }];
+      var recent = [];
+      try { recent = JSON.parse(stash('scanner-dest-recent') || '[]'); } catch (e) { recent = []; }
+      var byKey = {};
+      list.forEach(function (d) { byKey[d.k] = d; });
+      var top = recent.map(function (k) { return byKey[k]; }).filter(Boolean);
+      list.slice(0, 8).forEach(function (d) { if (top.indexOf(d) < 0) top.push(d); });
+      sheet(function (body, close) {
+        body.appendChild(el('h2', null, 'Send to'));
+        var input = el('input', { type: 'search', placeholder: 'Find a project', 'aria-label': 'Find a project' });
+        body.appendChild(input);
+        var stack = el('div', { class: 'stack' });
+        body.appendChild(stack);
+        function draw(items) {
+          stack.innerHTML = '';
+          items.forEach(function (d, i) {
+            var b = el('button', i === 0 && !input.value ? { class: 'primary' } : null, d.l);
+            b.onclick = function () { close(); sendDoc(d); };
+            stack.appendChild(b);
+          });
+          if (!items.length) stack.appendChild(el('p', null, 'No project by that name.'));
+        }
+        input.oninput = function () {
+          var q = input.value.trim().toLowerCase();
+          draw(q ? list.filter(function (d) { return d.l.toLowerCase().indexOf(q) >= 0; }).slice(0, 12) : top);
+        };
+        draw(top);
+      });
+    });
+  }
+
   function sendToClaude() {
     if (!S.pages.length) { toast('Nothing to send yet.'); return Promise.resolve(); }
+    if (dropKey()) return isCards() ? sendCards() : pickFolder();
+    return shareToClaude();
+  }
+
+  function shareToClaude() {
     var cards = isCards();
     var note = cards ? CARD_PROMPT : '';
     if (note) copyText(note);

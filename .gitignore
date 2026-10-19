@@ -3,3 +3,5 @@
 tools/testdata/
 __pycache__/
 *.pyc
+cloud/.wrangler/
+_incoming/
