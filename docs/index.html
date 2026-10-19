@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#111417">
 <title>Scanner</title>
-<meta name="description" content="Photograph pages, straighten them, and make a PDF.">
+<meta name="description" content="Photograph pages and business cards, straighten them, make a PDF, and send them to Claude.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Scanner">
 <meta property="og:title" content="Scanner">
-<meta property="og:description" content="Photograph pages, straighten them, and make a PDF.">
+<meta property="og:description" content="Photograph pages and business cards, straighten them, make a PDF, and send them to Claude.">
 <meta property="og:url" content="https://nanobotco.github.io/scanner/">
 <meta property="og:image" content="https://nanobotco.github.io/scanner/card.jpg">
 <meta property="og:image:width" content="1200">
@@ -38,8 +38,9 @@
     <p id="empty" class="empty">No documents yet.</p>
     <p id="usage" class="note"></p>
   </div>
-  <footer class="bar bottom">
+  <footer class="bar bottom three">
     <button id="pdfTables" class="big">PDF &rarr; sheet</button>
+    <button id="newCards" class="big">Cards</button>
     <button id="newScan" class="big primary">New scan</button>
   </footer>
 </section>
@@ -49,6 +50,7 @@
   <header class="bar over">
     <button id="capBack" class="icon" aria-label="Back">&larr;</button>
     <span id="capCount" class="count">0 pages</span>
+    <button id="capNext" class="ghost" hidden>Next card</button>
     <button id="torch" class="icon" aria-label="Light" hidden>&#9788;</button>
   </header>
   <div class="stage">
@@ -73,10 +75,15 @@
   <div class="scroll">
     <ul id="pageList" class="pages"></ul>
   </div>
-  <footer class="bar bottom three">
-    <button id="addPages" class="big">Add pages</button>
-    <button id="savePdf" class="big">PDF</button>
-    <button id="sharePdf" class="big primary">Share</button>
+  <footer class="bar bottom rows">
+    <div class="row2">
+      <button id="addPages" class="big">Add pages</button>
+      <button id="savePdf" class="big">PDF</button>
+      <button id="sharePdf" class="big">Share</button>
+    </div>
+    <div class="row2">
+      <button id="toClaude" class="big primary">Send to Claude</button>
+    </div>
   </footer>
 </section>
 

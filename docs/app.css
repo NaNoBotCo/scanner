@@ -159,7 +159,7 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 /* ---- two-row footers ---- */
 .bar.bottom.rows{flex-direction:column;align-items:stretch;gap:8px}
 .row2{display:flex;gap:8px}
-.row2 .big{flex:1}
+.row2 .big{flex:1;padding:0 8px}
 
 /* ---- the signing pad ---- */
 .bar.thin{gap:10px;padding-top:calc(8px + env(safe-area-inset-top));padding-bottom:8px}

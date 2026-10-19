@@ -1,7 +1,7 @@
 {
   "name": "Scanner",
   "short_name": "Scanner",
-  "description": "Photograph pages, straighten them, and make a PDF.",
+  "description": "Photograph pages and business cards, straighten them, make a PDF, and send them to Claude.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

@@ -4,7 +4,7 @@ A page scanner that runs in the phone's browser.
 
 WHAT IT DOES
 
-  Photograph a page.  The app finds the sheet in the photo, straightens it,
+  Photograph a page or a business card.  The app finds the sheet in the photo, straightens it,
   flattens the light so the paper reads white, and keeps it as a page.
   Pages become a PDF.
 
@@ -15,6 +15,12 @@ WHAT IT DOES
   Sign             a full-screen pad for a finger, or the ink lifted off a
                    photograph of a signature
   Export           PDF, sized Auto / A4 / Letter / Legal; save or share
+  Send to Claude   opens the share list with the scan ready; pick Claude.
+                   A document goes as one PDF.
+  Cards            business cards: front, back if it has one, Next card.
+                   Done sends one picture per card, back under front, with a
+                   note asking Claude for the details and a .vcf contact file.
+                   The note is copied too, to paste if Claude leaves it out.
   PDF to sheet     read a table off a PDF that carries text and hand back a
                    spreadsheet: CSV, or Excel with a sheet per page.  A ruled
                    table is read off its own borders, so merged cells and
