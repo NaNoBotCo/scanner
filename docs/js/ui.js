@@ -3,7 +3,7 @@
   'use strict';
 
   var $ = function (s) { return document.querySelector(s); };
-  var BUILD = '7';
+  var BUILD = '8';
   var QUALITY = { small: 1400, normal: 2200, large: 3000 };
   var FILTERS = { colour: 'Colour', gray: 'Grey', bw: 'Text', photo: 'Photo' };
   var SIZES = { auto: 'Auto', a4: 'A4', letter: 'Letter', legal: 'Legal' };
@@ -12,8 +12,14 @@
     doc: null, pages: [], idx: 0,
     stream: null, track: null, live: null, liveTimer: null,
     cropQuad: null, cropBitmap: null, drag: -1, lastDeleted: null,
-    tbl: null
+    tbl: null, cardN: 1, cardSide: 'front'
   };
+
+  /* Words that ride along with business cards. Claude reads the card from the
+     picture; this says what to hand back. */
+  var CARD_PROMPT = 'Business cards, front and back where there is a back. For each card: ' +
+    'name, title, company, phone, email, LINE, website and address, in the language printed ' +
+    'and in English. Then one .vcf file with all of them, ready to add to my contacts.';
 
   // ---------------------------------------------------------------- worker
 
@@ -176,13 +182,15 @@
       b2.onclick = function () { close(); rename(d, renderHome); };
       var b3 = el('button', null, 'Share PDF');
       b3.onclick = function () { close(); openDoc(d.id).then(function () { exportPdf(true); }); };
+      var b5 = el('button', null, 'Send to Claude');
+      b5.onclick = function () { close(); openDoc(d.id).then(sendToClaude); };
       var b4 = el('button', { class: 'danger' }, 'Delete');
       b4.onclick = function () {
         close();
         if (!confirm('Delete "' + d.name + '" and its ' + d.order.length + ' pages?')) return;
         STORE.deleteDoc(d.id).then(renderHome);
       };
-      [b1, b2, b3, b4].forEach(function (b) { stack.appendChild(b); });
+      [b1, b5, b2, b3, b4].forEach(function (b) { stack.appendChild(b); });
       body.appendChild(stack);
     });
   }
@@ -214,6 +222,19 @@
     });
   };
 
+  $('#newCards').onclick = function () {
+    var now = new Date();
+    var name = 'Cards ' + now.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ' ' +
+      now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    STORE.newDoc(name).then(function (d) {
+      d.kind = 'cards';
+      return STORE.putDoc(d);
+    }).then(function (d) {
+      S.doc = d; S.pages = []; S.cardN = 1; S.cardSide = 'front';
+      startCamera();
+    });
+  };
+
   $('#helpBtn').onclick = function () {
     sheet(function (body, close) {
       body.appendChild(el('h2', null, 'Scanner'));
@@ -223,6 +244,8 @@
         'Sign opens a full-screen pad to sign with a finger, or takes the ink off a photo of a signature. Drag it where it goes.',
         'A saved signature sits behind a PIN, and behind the fingerprint where the phone allows it.',
         'PDF saves the file. Share sends it to mail, chat or Drive.',
+        'Send to Claude opens the share list with the scan ready; pick Claude. A document goes as one PDF.',
+        'Cards is for business cards: the front, then the back if it has one, then Next card. Done sends every card to Claude as a picture, with a note asking for the details and a contact file. The note is also copied, to paste if it does not arrive.',
         'PDF → sheet reads a table out of a PDF that carries real text and hands back a spreadsheet — CSV, or Excel with a sheet per page. A photographed page holds no text to read, so that path waits on OCR.',
         'Pages sit in this browser’s storage until you delete them.'
       ].forEach(function (t) { body.appendChild(el('p', null, t)); });
@@ -367,10 +390,28 @@
 
   // ---------------------------------------------------------------- camera
 
+  function isCards() { return !!(S.doc && S.doc.kind === 'cards'); }
+
+  function capLabel() {
+    if (isCards()) {
+      $('#capCount').textContent = 'Card ' + S.cardN + ' · ' + S.cardSide;
+      $('#capNext').hidden = S.cardSide !== 'back';
+      return;
+    }
+    $('#capNext').hidden = true;
+    $('#capCount').textContent = S.pages.length + (S.pages.length === 1 ? ' page' : ' pages');
+  }
+
+  $('#capNext').onclick = function () { S.cardN++; S.cardSide = 'front'; capLabel(); };
+
   function startCamera() {
     show('capture');
-    $('#capCount').textContent = S.pages.length + (S.pages.length === 1 ? ' page' : ' pages');
-    $('#camMsg').textContent = '';
+    if (isCards() && S.pages.length) {
+      S.cardN = 1 + S.pages.reduce(function (m, p) { return Math.max(m, p.card || 0); }, 0);
+      S.cardSide = 'front';
+    }
+    capLabel();
+    $('#camMsg').textContent = isCards() ? 'Hold the phone close, so the card fills most of the picture.' : '';
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       $('#camMsg').textContent = 'No camera here. Use Photos.';
       return;
@@ -437,14 +478,16 @@
   };
 
   $('#capBack').onclick = function () { stopCamera(); finishCapture(); };
-  $('#capDone').onclick = function () { stopCamera(); finishCapture(); };
+  $('#capDone').onclick = function () { stopCamera(); finishCapture(isCards()); };
 
-  function finishCapture() {
+  /* Done on a run of cards goes straight on to Claude: the tap on Done is what
+     lets the page open the share list. */
+  function finishCapture(send) {
     if (S.pages.length === 0 && S.doc) {
       STORE.deleteDoc(S.doc.id).then(function () { S.doc = null; show('home'); renderHome(); });
       return;
     }
-    openDoc(S.doc.id);
+    openDoc(S.doc.id).then(function () { if (send) return sendToClaude(); });
   }
 
   function grabFrame() {
@@ -471,7 +514,7 @@
       toast('That shot did not come through.');
     }).then(function () {
       $('#shutter').disabled = false;
-      $('#capCount').textContent = S.pages.length + (S.pages.length === 1 ? ' page' : ' pages');
+      capLabel();
     });
   };
 
@@ -487,9 +530,8 @@
     files.forEach(function (f) { chain = chain.then(function () { return addPhoto(f); }); });
     chain.catch(function () { toast('One of those would not open.'); }).then(function () {
       busy(false);
-      if ($('#capture').classList.contains('show')) {
-        $('#capCount').textContent = S.pages.length + (S.pages.length === 1 ? ' page' : ' pages');
-      } else openDoc(S.doc.id);
+      if ($('#capture').classList.contains('show')) capLabel();
+      else openDoc(S.doc.id);
     });
   };
 
@@ -513,6 +555,7 @@
 
   function addPhoto(blob) {
     var page = { id: STORE.id(), docId: S.doc.id, filter: S.doc.filter || 'colour', rotate: 0 };
+    if (isCards()) { page.card = S.cardN; page.side = S.cardSide; }
     return normalize(blob).then(function (orig) {
       page.original = orig;
       return bitmapOf(orig);
@@ -529,6 +572,9 @@
       S.pages.push(page);
       S.doc.order.push(page.id);
       if (S.doc.order.length === 1) S.doc.cover = page.thumb;
+      if (page.card) {
+        if (page.side === 'front') S.cardSide = 'back'; else { S.cardN++; S.cardSide = 'front'; }
+      }
       return STORE.putDoc(S.doc);
     });
   }
@@ -565,7 +611,7 @@
       open.appendChild(img);
       open.onclick = function () { openPage(i); };
 
-      var n = el('button', { class: 'n' }, 'Page ' + (i + 1));
+      var n = el('button', { class: 'n' }, p.card ? 'Card ' + p.card + ' · ' + p.side : 'Page ' + (i + 1));
       n.appendChild(el('small', null, FILTERS[p.filter] + ' · ' + p.w + '×' + p.h));
       n.onclick = function () { openPage(i); };
 
@@ -1389,6 +1435,77 @@
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
   }
 
+  /* One picture per card, the back under the front, so Claude reads each card
+     whole and a pair never comes apart. */
+  function cardImages() {
+    var groups = [], byCard = {};
+    S.pages.forEach(function (p) {
+      var k = p.card || ('p' + p.id);
+      if (!byCard[k]) { byCard[k] = []; groups.push(byCard[k]); }
+      byCard[k].push(p);
+    });
+    var chain = Promise.resolve(), out = [];
+    groups.forEach(function (g, gi) {
+      g.sort(function (a, b) { return (a.side === 'back') - (b.side === 'back'); });
+      chain = chain.then(function () {
+        return Promise.all(g.map(function (p) { return bitmapOf(p.blob); }));
+      }).then(function (bmps) {
+        var gap = 32, w = 0, h = 0;
+        bmps.forEach(function (b) { w = Math.max(w, b.width); h += b.height; });
+        h += gap * (bmps.length + 1); w += gap * 2;
+        var s = Math.min(1, 2400 / Math.max(w, h));
+        var c = IMG.makeCanvas(Math.round(w * s), Math.round(h * s));
+        var ctx = c.getContext('2d');
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, c.width, c.height);
+        var y = gap;
+        bmps.forEach(function (b) {
+          ctx.drawImage(b, ((w - b.width) / 2) * s, y * s, b.width * s, b.height * s);
+          y += b.height + gap;
+          b.close();
+        });
+        return IMG.toBlob(c, 'image/jpeg', 0.9);
+      }).then(function (blob) {
+        out.push(new File([blob], safeName(S.doc.name) + ' - card ' + (gi + 1) + '.jpg', { type: 'image/jpeg' }));
+      });
+    });
+    return chain.then(function () { return out; });
+  }
+
+  function copyText(t) {
+    try { if (navigator.clipboard) return navigator.clipboard.writeText(t).catch(function () { }); } catch (e) { }
+    return Promise.resolve();
+  }
+
+  function sendToClaude() {
+    if (!S.pages.length) { toast('Nothing to send yet.'); return Promise.resolve(); }
+    var cards = isCards();
+    var note = cards ? CARD_PROMPT : '';
+    if (note) copyText(note);
+    busy(true, cards ? 'Getting the cards ready' : 'Building the PDF');
+    var files = cards ? cardImages() : buildPdf().then(function (blob) {
+      return [new File([blob], safeName(S.doc.name) + '.pdf', { type: 'application/pdf' })];
+    });
+    return files.then(function (list) {
+      busy(false);
+      var data = { files: list, title: S.doc.name };
+      if (note) data.text = note;
+      if (navigator.canShare && !navigator.canShare(data) && note) delete data.text;
+      if (navigator.canShare && navigator.canShare(data)) {
+        return navigator.share(data).catch(function (e) {
+          if (!e || e.name === 'AbortError') return;
+          if (e.name === 'NotAllowedError') { toast('Tap Send to Claude.'); return; }
+          list.forEach(function (f) { download(f, f.name); });
+        });
+      }
+      list.forEach(function (f) { download(f, f.name); });
+      toast('Sharing is off here. Saved, to drop into Claude.' + (note ? ' The note is copied.' : ''));
+    }).catch(function () {
+      busy(false);
+      toast('That did not build.');
+    });
+  }
+
+  $('#toClaude').onclick = function () { sendToClaude(); };
   $('#savePdf').onclick = function () { exportPdf(false); };
   $('#sharePdf').onclick = function () { exportPdf(true); };
 
