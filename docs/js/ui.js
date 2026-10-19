@@ -3,7 +3,7 @@
   'use strict';
 
   var $ = function (s) { return document.querySelector(s); };
-  var BUILD = '9';
+  var BUILD = '10';
   var QUALITY = { small: 1400, normal: 2200, large: 3000 };
   var FILTERS = { colour: 'Colour', gray: 'Grey', bw: 'Text', photo: 'Photo' };
   var SIZES = { auto: 'Auto', a4: 'A4', letter: 'Letter', legal: 'Legal' };
@@ -246,7 +246,7 @@
         'PDF saves the file. Share sends it to mail, chat or Drive.',
         'Send to Claude puts the document, as one PDF, in the folder you pick on the Mac, where Claude Code reads it. It lands within a minute.',
         'Cards is for business cards: the front, then the back if it has one, then Next card. Done sends them to the Mac, where each card is read into Contacts.',
-        'On a phone not linked to the Mac, Send to Claude opens the share list instead.',
+        'On a phone not linked to the Mac, Send to Claude says how to link it, and offers the share list.',
         'PDF → sheet reads a table out of a PDF that carries real text and hands back a spreadsheet — CSV, or Excel with a sheet per page. A photographed page holds no text to read, so that path waits on OCR.',
         'Pages sit in this browser’s storage until you delete them.'
       ].forEach(function (t) { body.appendChild(el('p', null, t)); });
@@ -1597,7 +1597,16 @@
   function sendToClaude() {
     if (!S.pages.length) { toast('Nothing to send yet.'); return Promise.resolve(); }
     if (dropKey()) return isCards() ? sendCards() : pickFolder();
-    return shareToClaude();
+    sheet(function (body, close) {
+      body.appendChild(el('h2', null, 'Not linked to the Mac'));
+      body.appendChild(el('p', null, 'Point this phone’s camera at “SCANNER — link this phone” on the Mac’s Desktop and open the link. After that, scans go straight to your folders.'));
+      var stack = el('div', { class: 'stack' });
+      var b = el('button', null, 'Use the share list this time');
+      b.onclick = function () { close(); shareToClaude(); };
+      stack.appendChild(b);
+      body.appendChild(stack);
+    });
+    return Promise.resolve();
   }
 
   function shareToClaude() {
