@@ -1,0 +1,10 @@
+# Scanner's drop to the Mac. Deploy from this folder: npx wrangler deploy
+# Secret KEY = ~/.tokens/SCANNER_DROP_KEY (the phone is linked by opening the app with #link=<KEY>)
+name = "scanner-drop"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[[r2_buckets]]
+binding = "DROP"
+bucket_name = "scanner-drop"

@@ -15,12 +15,13 @@ WHAT IT DOES
   Sign             a full-screen pad for a finger, or the ink lifted off a
                    photograph of a signature
   Export           PDF, sized Auto / A4 / Letter / Legal; save or share
-  Send to Claude   opens the share list with the scan ready; pick Claude.
-                   A document goes as one PDF.
+  Send to Claude   linked to the Mac: the document, as one PDF, lands in the
+                   folder picked on the phone (Catalog, Legal Cases, or any
+                   project), within a minute.  Not linked: the share list.
   Cards            business cards: front, back if it has one, Next card.
-                   Done sends one picture per card, back under front, with a
-                   note asking Claude for the details and a .vcf contact file.
-                   The note is copied too, to paste if Claude leaves it out.
+                   Done sends them to the Mac, where `cards` reads each one
+                   into Contacts.  Not linked: one picture per card, back
+                   under front, to the share list with a note for Claude.
   PDF to sheet     read a table off a PDF that carries text and hand back a
                    spreadsheet: CSV, or Excel with a sheet per page.  A ruled
                    table is read off its own borders, so merged cells and
@@ -65,6 +66,27 @@ THE SIGNATURE LOCK
 
   Fingerprint unlock needs Chrome's WebAuthn PRF extension on the phone.  Where
   that is missing the app says so and the PIN carries it.
+
+
+THE DROP TO THE MAC
+
+  Phone -> scanner-drop Worker (cloud/, private R2 bucket scanner-drop) -> Mac.
+  The phone is linked once by opening the app with #link=<key>; the key is
+  ~/.tokens/SCANNER_DROP_KEY and the code to scan is
+  ~/Desktop/SCANNER — link this phone.png.  Every route needs the key.
+
+  tools/pull.py runs every minute (launchd com.nanobotco.scanner-pull, log
+  /tmp/nanobotco-scanner-pull.log).  It writes each file, checks its size, then
+  removes it from the bucket; ledger ~/.claude/state/scans.tsv.
+
+    Catalog        ~/Desktop/catalog/inbox/scans/
+    Legal Cases    ~/Desktop/Legal Cases/_scans/
+    a project      <project>/_incoming/scans/, added to .git/info/exclude
+                   first, so a scan is never committed with the code
+    cards          ~/Desktop/CARD DROP/, then `cards`, one card per run
+
+  It also sends the folder list the phone shows, most recently worked-on
+  project first, whenever that list changes.
 
 
 WORKING ON IT
