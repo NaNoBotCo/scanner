@@ -38,10 +38,15 @@
     <p id="empty" class="empty">No documents yet.</p>
     <p id="usage" class="note"></p>
   </div>
-  <footer class="bar bottom three">
-    <button id="pdfTables" class="big">PDF &rarr; sheet</button>
-    <button id="newCards" class="big">Cards</button>
-    <button id="newScan" class="big primary">New scan</button>
+  <footer class="bar bottom rows">
+    <div class="row2">
+      <button id="openPdf" class="big">Open PDF</button>
+      <button id="pdfTables" class="big">PDF &rarr; sheet</button>
+      <button id="newCards" class="big">Cards</button>
+    </div>
+    <div class="row2">
+      <button id="newScan" class="big primary">New scan</button>
+    </div>
   </footer>
 </section>
 
@@ -108,6 +113,7 @@
     </div>
     <div class="row2">
       <button id="recrop" class="big">Crop</button>
+      <button id="movePage" class="big">Move</button>
       <button id="signBtn" class="big primary">Sign</button>
     </div>
   </footer>
@@ -206,10 +212,12 @@
 <input id="fileInput" type="file" accept="image/*" multiple hidden>
 <input id="sigInput" type="file" accept="image/*" hidden>
 <input id="pdfInput" type="file" accept="application/pdf,.pdf" hidden>
+<input id="pdfOpenInput" type="file" accept="application/pdf,.pdf" multiple hidden>
 
 <script src="js/imaging.js"></script>
 <script src="js/pdf.js"></script>
 <script src="js/tables.js"></script>
+<script src="js/pdfdoc.js"></script>
 <script src="js/store.js"></script>
 <script src="js/lock.js"></script>
 <script src="js/ui.js"></script>

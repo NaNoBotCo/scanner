@@ -14,6 +14,12 @@ WHAT IT DOES
   Edit             reorder, turn, crop again, delete with an undo
   Sign             a full-screen pad for a finger, or the ink lifted off a
                    photograph of a signature
+  Open PDF         a PDF's pages, or several PDFs as one document, to move,
+                   turn, delete or sign.  Move puts the open page first, last
+                   or at a page number.  The PDF that comes out copies the
+                   original pages in the new order, text and scans unchanged;
+                   a signed page goes in as its picture, and so does every
+                   page of a PDF with a lock on it.
   Export           PDF, sized Auto / A4 / Letter / Legal; save or share
   Send to Claude   linked to the Mac: the document, as one PDF, lands in the
                    folder picked on the phone (Catalog, Legal Cases, or any
@@ -106,11 +112,13 @@ WORKING ON IT
     js/imaging.js  corner detection, perspective warp, filters, ink lift
     js/pdf.js      PDF assembly, JPEG pages embedded as DCTDecode
     js/tables.js   PDF text -> grid, then CSV or .xlsx
+    js/pdfdoc.js   Open PDF: pages drawn with pdf.js, written back with pdf-lib
     js/store.js    IndexedDB
     js/lock.js     the PIN, the data key, WebAuthn PRF
     js/worker.js   the heavy work, off the main thread
     js/ui.js       screens and wiring
-    js/vendor/pdfjs/  Mozilla's pdf.js, loaded only for PDF to sheet
+    js/vendor/pdfjs/  Mozilla's pdf.js, loaded for PDF to sheet and Open PDF
+    js/vendor/pdflib/ pdf-lib 1.17.1, loaded when a document from a PDF is saved
     sw.js          the offline cache
 
 
@@ -120,3 +128,7 @@ LICENCE
 
   js/vendor/pdfjs/ is Mozilla's pdf.js, Apache 2.0, bundled unchanged so the
   feature runs offline with nothing fetched at use.
+
+  js/vendor/pdflib/ is pdf-lib 1.17.1 by Andrew Dillon, MIT (its LICENSE.md
+  beside it), from the npm tarball, checksum matched to the registry's; the
+  source-map comment is the only line removed.

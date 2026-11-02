@@ -3,7 +3,7 @@
   'use strict';
 
   var $ = function (s) { return document.querySelector(s); };
-  var BUILD = '10';
+  var BUILD = '11';
   var QUALITY = { small: 1400, normal: 2200, large: 3000 };
   var FILTERS = { colour: 'Colour', gray: 'Grey', bw: 'Text', photo: 'Photo' };
   var SIZES = { auto: 'Auto', a4: 'A4', letter: 'Letter', legal: 'Legal' };
@@ -247,6 +247,7 @@
         'Send to Claude puts the document, as one PDF, in the folder you pick on the Mac, where Claude Code reads it. It lands within a minute.',
         'Cards is for business cards: the front, then the back if it has one, then Next card. Done sends them to the Mac, where each card is read into Contacts.',
         'On a phone not linked to the Mac, Send to Claude says how to link it, and offers the share list.',
+        'Open PDF brings in a PDF’s pages, or several PDFs as one document. Move pages with the arrows, or open a page and tap Move. PDF and Share give it back with the pages in the new order, text and all.',
         'PDF → sheet reads a table out of a PDF that carries real text and hands back a spreadsheet — CSV, or Excel with a sheet per page. A photographed page holds no text to read, so that path waits on OCR.',
         'Pages sit in this browser’s storage until you delete them.'
       ].forEach(function (t) { body.appendChild(el('p', null, t)); });
@@ -257,6 +258,96 @@
       body.appendChild(stack);
     });
   };
+
+  // ---------------------------------------------------------------- open a PDF
+
+  $('#openPdf').onclick = function () { $('#pdfOpenInput').click(); };
+
+  $('#pdfOpenInput').onchange = function (e) {
+    var files = [].slice.call(e.target.files || []);
+    e.target.value = '';
+    if (files.length) openPdfs(files);
+  };
+
+  /* Each PDF page becomes a page of a new document, drawn for the screen; the
+     PDF itself is kept, so export copies the original pages. */
+  function openPdfs(files) {
+    var name = files[0].name.replace(/\.pdf$/i, '') + (files.length > 1 ? ' +' + (files.length - 1) : '');
+    var failed = [], locked = false;
+    busy(true, 'Opening the PDF');
+    STORE.newDoc(name).then(function (d) {
+      S.doc = d; S.pages = [];
+      var chain = Promise.resolve();
+      files.forEach(function (f) {
+        chain = chain.then(function () {
+          return addPdf(f).catch(function (err) {
+            failed.push(f.name);
+            if (/password|encrypt/i.test(String(err && (err.name + ' ' + err.message)))) locked = true;
+          });
+        });
+      });
+      return chain;
+    }).then(function () {
+      busy(false);
+      if (failed.length) {
+        toast(locked ? 'That PDF is locked. Open it without a password first.' :
+          (failed.length === files.length ? 'That PDF would not open.' : failed.join(', ') + ' would not open.'));
+      }
+      if (!S.pages.length) {
+        return STORE.deleteDoc(S.doc.id).then(function () { S.doc = null; show('home'); renderHome(); });
+      }
+      return openDoc(S.doc.id);
+    });
+  }
+
+  function addPdf(file) {
+    var src = { id: STORE.id(), docId: S.doc.id, name: file.name.replace(/\.pdf$/i, '') };
+    return file.arrayBuffer().then(function (buf) {
+      var bytes = new Uint8Array(buf);
+      src.blob = new Blob([bytes], { type: 'application/pdf' });
+      var stored = false;
+      return PDFDOC.render(bytes, QUALITY[S.doc.quality] || QUALITY.normal, function (i, n, r) {
+        $('#busyMsg').textContent = 'Page ' + i + ' of ' + n;
+        var page = {
+          id: STORE.id(), docId: S.doc.id, src: src.id, srcName: src.name, n: i - 1,
+          scale: r.scale, filter: S.doc.filter || 'colour', rotate: 0,
+          original: r.blob, blob: r.blob, thumb: r.thumb, w: r.w, h: r.h
+        };
+        return (stored ? Promise.resolve() : STORE.putSrc(src).then(function () { stored = true; }))
+          .then(function () { return STORE.putPage(page); })
+          .then(function () {
+            S.pages.push(page);
+            S.doc.order.push(page.id);
+            if (S.doc.order.length === 1) S.doc.cover = page.thumb;
+            return STORE.putDoc(S.doc);
+          });
+      });
+    });
+  }
+
+  /* A PDF page turned: the picture of the page, turned; signatures go back on. */
+  function turnPicture(p) {
+    return bitmapOf(p.original).then(function (bmp) {
+      var r = ((p.rotate || 0) % 360 + 360) % 360, side = r === 90 || r === 270;
+      var c = IMG.makeCanvas(side ? bmp.height : bmp.width, side ? bmp.width : bmp.height);
+      var ctx = c.getContext('2d');
+      ctx.translate(c.width / 2, c.height / 2);
+      ctx.rotate(r * Math.PI / 180);
+      ctx.drawImage(bmp, -bmp.width / 2, -bmp.height / 2);
+      bmp.close();
+      return Promise.all([
+        r ? IMG.toBlob(c, 'image/jpeg', 0.88) : p.original,
+        IMG.toBlob(IMG.thumbnail(c, 320), 'image/jpeg', 0.7)
+      ]).then(function (b) { return { blob: b[0], thumb: b[1], w: c.width, h: c.height }; });
+    });
+  }
+
+  function srcBytes(id) {
+    return STORE.getSrc(id).then(function (src) {
+      if (!src) throw new Error('source missing');
+      return src.blob.arrayBuffer();
+    }).then(function (buf) { return new Uint8Array(buf); });
+  }
 
   // ---------------------------------------------------------------- PDF → sheet
 
@@ -613,7 +704,7 @@
       open.onclick = function () { openPage(i); };
 
       var n = el('button', { class: 'n' }, p.card ? 'Card ' + p.card + ' · ' + p.side : 'Page ' + (i + 1));
-      n.appendChild(el('small', null, FILTERS[p.filter] + ' · ' + p.w + '×' + p.h));
+      n.appendChild(el('small', null, p.src ? srcLabel(p) : FILTERS[p.filter] + ' · ' + p.w + '×' + p.h));
       n.onclick = function () { openPage(i); };
 
       var col = el('div', { class: 'col' });
@@ -630,14 +721,63 @@
     });
   }
 
-  function move(i, d) {
-    var j = i + d;
-    if (j < 0 || j >= S.pages.length) return;
-    var t = S.pages[i]; S.pages[i] = S.pages[j]; S.pages[j] = t;
-    S.doc.order = S.pages.map(function (p) { return p.id; });
-    S.doc.cover = S.pages[0].thumb;
-    STORE.putDoc(S.doc).then(renderDoc);
+  /* "PDF page 3", or "Lease · page 3" when the document holds more than one PDF. */
+  function srcLabel(p) {
+    var many = S.pages.some(function (q) { return q.src && q.src !== p.src; });
+    return (many ? p.srcName + ' · page ' : 'PDF page ') + (p.n + 1);
   }
+
+  function move(i, d) { moveTo(i, i + d); }
+
+  function moveTo(i, j) {
+    if (j < 0 || j >= S.pages.length || j === i) return Promise.resolve();
+    var p = S.pages.splice(i, 1)[0];
+    S.pages.splice(j, 0, p);
+    S.doc.order = S.pages.map(function (x) { return x.id; });
+    S.doc.cover = S.pages[0].thumb;
+    return STORE.putDoc(S.doc).then(renderDoc);
+  }
+
+  /* Move the open page to any place: first, last, or a page number. */
+  $('#movePage').onclick = function () {
+    var i = S.idx, n = S.pages.length;
+    if (n < 2) { toast('This is the only page.'); return; }
+    sheet(function (body, close) {
+      body.appendChild(el('h2', null, 'Move page ' + (i + 1) + ' to'));
+      var input = el('input', { type: 'number', inputmode: 'numeric', min: '1', max: String(n),
+        value: String(i + 1), 'aria-label': 'New page number, 1 to ' + n });
+      body.appendChild(input);
+      function go(j) {
+        close();
+        moveTo(i, j).then(function () {
+          show('doc'); renderDoc();
+          var li = $('#pageList').children[j];
+          if (li) {
+            li.scrollIntoView({ block: 'center' });
+            li.classList.add('moved');
+            setTimeout(function () { li.classList.remove('moved'); }, 1600);
+          }
+        });
+      }
+      var stack = el('div', { class: 'stack' });
+      var ok = el('button', { class: 'primary' }, 'Move');
+      ok.onclick = function () {
+        var v = parseInt(input.value, 10);
+        if (!(v >= 1 && v <= n)) { toast('A page number from 1 to ' + n + '.'); return; }
+        go(v - 1);
+      };
+      var row = el('div', { class: 'row' });
+      var first = el('button', null, 'First');
+      first.onclick = function () { go(0); };
+      var last = el('button', null, 'Last');
+      last.onclick = function () { go(n - 1); };
+      row.appendChild(first); row.appendChild(last);
+      body.appendChild(row);
+      stack.appendChild(ok);
+      body.appendChild(stack);
+      setTimeout(function () { input.focus(); input.select(); }, 60);
+    });
+  };
 
   $('#docBack').onclick = function () { show('home'); renderHome(); };
   $('#docName').onclick = function () { rename(S.doc, renderDoc); };
@@ -693,6 +833,7 @@
     busy(true, 'Redoing ' + S.pages.length + ' pages');
     var chain = Promise.resolve();
     S.pages.forEach(function (p) {
+      if (p.src) return;
       chain = chain.then(function () { p.filter = filter; return reprocess(p); });
     });
     chain.then(function () {
@@ -703,9 +844,9 @@
   }
 
   function reprocess(p) {
-    return bitmapOf(p.original).then(function (bmp) {
+    return (p.src ? turnPicture(p) : bitmapOf(p.original).then(function (bmp) {
       return process(bmp, { quad: p.quad, filter: p.filter, rotate: p.rotate, quality: S.doc.quality });
-    }).then(function (r) {
+    })).then(function (r) {
       return finishPage(p, r);
     }).then(function () {
       return STORE.putPage(p);
@@ -772,6 +913,8 @@
     [].forEach.call($('#filterChips').children, function (b) {
       b.setAttribute('aria-pressed', String(b.dataset.f === p.filter));
     });
+    $('#filterChips').hidden = !!p.src;
+    $('#recrop').hidden = !!p.src;
     show('page');
   }
 
@@ -1394,6 +1537,15 @@
   // ---------------------------------------------------------------- export
 
   function buildPdf() {
+    if (S.pages.some(function (p) { return p.src; })) {
+      return PDFDOC.build(S.pages, {
+        pageSize: S.doc.pageSize, title: S.doc.name, date: new Date(S.doc.created)
+      }, srcBytes).then(function (r) {
+        S.pictured = r.pictured;
+        return r.blob;
+      });
+    }
+    S.pictured = 0;
     var jobs = S.pages.map(function (p) {
       return p.blob.arrayBuffer().then(function (buf) {
         return { bytes: new Uint8Array(buf), w: p.w, h: p.h };
@@ -1420,7 +1572,8 @@
         }
       }
       download(blob, name);
-      toast(share ? 'Sharing is off here. The PDF was saved instead.' : 'Saved ' + name);
+      toast(share ? 'Sharing is off here. The PDF was saved instead.' : 'Saved ' + name +
+        (S.pictured ? '. The PDF was locked, so its pages went in as pictures.' : ''));
     }).catch(function (e) {
       busy(false);
       toast('The PDF did not build.');
