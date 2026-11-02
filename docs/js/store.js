@@ -2,7 +2,7 @@
 (function (root) {
   'use strict';
 
-  var DB = 'scanner', VER = 2, db = null;
+  var DB = 'scanner', VER = 3, db = null;
 
   function open() {
     if (db) return Promise.resolve(db);
@@ -17,6 +17,10 @@
         }
         if (!d.objectStoreNames.contains('sigs')) d.createObjectStore('sigs', { keyPath: 'id' });
         if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta', { keyPath: 'id' });
+        if (!d.objectStoreNames.contains('srcs')) {
+          var src = d.createObjectStore('srcs', { keyPath: 'id' });
+          src.createIndex('docId', 'docId');
+        }
       };
       rq.onsuccess = function () { db = rq.result; res(db); };
       rq.onerror = function () { rej(rq.error); };
@@ -63,11 +67,13 @@
   }
 
   function deleteDoc(docId) {
-    return pagesOf(docId).then(function (pages) {
+    return Promise.all([pagesOf(docId), srcsOf(docId)]).then(function (r) {
+      var pages = r[0], srcs = r[1];
       return open().then(function (d) {
-        var t = d.transaction(['docs', 'pages'], 'readwrite');
+        var t = d.transaction(['docs', 'pages', 'srcs'], 'readwrite');
         t.objectStore('docs').delete(docId);
         pages.forEach(function (p) { t.objectStore('pages').delete(p.id); });
+        srcs.forEach(function (x) { t.objectStore('srcs').delete(x.id); });
         return new Promise(function (res, rej) { t.oncomplete = res; t.onerror = function () { rej(t.error); }; });
       });
     });
@@ -95,6 +101,22 @@
     });
   }
 
+  /* A PDF a document was opened from: { id, docId, name, blob }. */
+  function srcsOf(docId) {
+    return open().then(function (d) {
+      return req(d.transaction('srcs').objectStore('srcs').index('docId').getAll(docId));
+    });
+  }
+
+  function getSrc(srcId) {
+    return open().then(function (d) { return req(d.transaction('srcs').objectStore('srcs').get(srcId)); });
+  }
+
+  function putSrc(src) {
+    return open().then(function (d) {
+      return req(d.transaction('srcs', 'readwrite').objectStore('srcs').put(src));
+    }).then(function () { return src; });
+  }
 
   function listSigs() {
     return open().then(function (d) {
@@ -135,7 +157,7 @@
   root.STORE = {
     id: id, listDocs: listDocs, getDoc: getDoc, putDoc: putDoc, newDoc: newDoc,
     deleteDoc: deleteDoc, pagesOf: pagesOf, getPage: getPage, putPage: putPage,
-    deletePage: deletePage, usage: usage,
+    deletePage: deletePage, usage: usage, getSrc: getSrc, putSrc: putSrc, srcsOf: srcsOf,
     listSigs: listSigs, putSig: putSig, deleteSig: deleteSig, getMeta: getMeta, putMeta: putMeta
   };
 })(typeof self !== 'undefined' ? self : this);

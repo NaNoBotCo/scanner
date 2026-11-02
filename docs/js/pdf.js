@@ -125,5 +125,5 @@
     return new Blob(chunks, { type: 'application/pdf' });
   }
 
-  root.PDF = { build: build, sizes: PAGE_SIZES };
+  root.PDF = { build: build, pageBox: pageBox, sizes: PAGE_SIZES };
 })(typeof self !== 'undefined' ? self : this);
